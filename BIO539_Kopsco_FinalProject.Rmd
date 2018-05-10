@@ -1,0 +1,315 @@
+---
+title: "BIO539_Kopsco_FinalProject"
+author: "Kopsco"
+date: "5/8/2018"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("~/Desktop/PhD/Big_Data_Analysis/RProjects_BigDataAnalysisClassWork/data/")
+```
+**INTRODUCTION**
+
+Incidence of tick-borne disease has increased steadily across the United States in the past decade. Research suggests that there are approximately 300,000 new cases of Lyme disease each year, and although 95% of cases are reported from only 14 states, it is still the most common vector-borne disease in the country (CDC 2018). Health economists estimate that the current cost of Lyme disease to the U.S. healthcare system alone is between $712 million and $1.3 billion annually (Adrion et al. 2015). Reports of other tick-borne illnesses like babesiosis, ehrlichiosis, Rocky Mountain Spotted Fever, and various encephalitic viruses have doubled and tripled as their tick vector ranges expand (CDC 2018; Springer et al. 2015; Eisen et al. 2016). Aside from direct health care costs, the uptick in these illnesses is also having indirect mortalities such as a rise in babesia-infected blood bank reserves that have resulted in ~30% fatality rates in those transfusion patients who have received contaminated blood products (Lobo et al. 2013). The factors contributing to more cases of tick-borne diseases are complex and include broad ecological changes like changes in land use patterns, an increase in deer/wildlife populations overlaps with human-inhabited space, changes in human behavior that have resulted in enhanced exposure risks, and overall improvements in disease diagnosis, surveillance, and reporting (Beard & Strickman 2014).
+
+Passive surveillance is a validated and widely employed tool to estimate and observe changes in tick abundances, disease prevalence, and habitat range (Rand et al. 2007, Xu et al. 2016, Koffi et al. 2017). Institutions using these surveillance programs are now beginning to examine these data to assess human behavior and epidemiologic factors related to tick encounters, for instance where embedded ticks are found on the body, and the age of the bite victim (Xu et al. 2016). However, passive systems that require ticks to be mailed to research centers are lacking in rapid-feedback education of the public regarding tick encounters. The TickSpotters program at the University of Rhode Island's Center for Vector-borne Disease (CVB) is the longest-running online visual passive surveillance system in the country. It allows the public to submit photographs of ticks along with information surrounding the encounter, including the user identification of the tick. A response email is sent within 24 hours that identifies the tick to species and stage, andestimates feeding time, all time-critical information that can determine whether a person needs to take action to obtain prophylaxis medication. Based on the duration of feeding (estimated by the scutal index), we provide a detailed risk profile of low, moderate, or high risk of tick-specific disease transmission along with tick testing resources. Key preventative actions to prevent future encounters are also provided including instructions on how to perform a proper tick check, which tick repellent products are effective to use on people and pets, and in which specific habitats ticks can be found (e.g. trail edges). Here I present an analysis of two years of data from this surveillance system to establish predictor variables for tick literacy.
+
+I used data collected from January 1st 2015 to December 31st, 2016 using Wufoo online forms program (SurveyMonkey, Inc.) to analyze and fit a model that predicts a person's ability to correctly identify a tick. The online submission form provides TickSpotters users a tick identification chart and asks the user to identify the encountered tick to stage and species. Species options include ticks that are endemic to all regions of the United States and are specifically those that commonly feed on humans (versus wildlife). Identification options for species are blacklegged or deer tick (Ixodes scapularis), American dog tick (*Dermacentor variabilis*), Lone Star tick (*Amblyomma americanum*), Brown dog tick (*Rhipicephalus sanguineus*), Pacific Coast tick (*Dermacentor occidentalis*), western blacklegged tick (*Ixodes pacificus*), Rocky Mountain wood tick (*Dermacentor andersonii*), Gulf Coast tick (*Amblyomma maculatum*), and Cayenne tick (*Amblyomma cajennese*). The user was instructed to also identify the life stage (adult, nymph, or larva), enter the date the tick was found, on whom or what the tick found (on a person, pet, or loose), and state (or province in the case of Canada) of residence. For both species and stage there was an "unknown" option if the user could not choose the tick or the life stage. A photograph of the tick was attached to the submission and CVB staff reviewed entries on a daily basis. Tick photographs were examined by CVB staff and identified to species, stage, and feeding duration, and an email was sent to the participant with the correct identification and a risk assessment based on the tick/stage-specific diseases and prevalence of those diseases for the region of residence. Information was also provided in the email on how to prevent future tick bites and encounters on humans and pets by conducting regular tick checks, using permethrin repellent and tick knock-down pet products, and resources to submit ticks for testing should concern exist regarding infection. 
+
+**METHODS**
+
+All basic descriptive analyses and model fitting were performed in R version 3.4.4/RStudio version 1.1.419. A logistic regression model was used as the deterministic function because of all of the variables analyzed were categorical, and the binomial distribution was used to model the probabilistic function because the correction variable for tick identification was binary (i.e. correction or no correction). The generalized linear model logit equation was used to test model parameters for the best predictors of tick literacy:
+
+ln(odds) = ln(p/(1-p)) = a*x1 + b*x2 + … + z*xn
+
+Training and testing data sets were established to build and test a predictive model by dividing the entire data set (n=1045) roughly in half (train n = 500; test n = 545). Using the training set, the binomial logit equation was fit with each of the predictors and varied with correction to establish significance and strength of interaction. The relative quality of various combinations and potential interactions amongst all of the parameters were compared using both Akaike's Information Criterion (AIC) and Bayesian Information Criterion (BIC). When there was disagreement between these two assessment methods, BIC was ultimately chosen due to the large sample size of the dataset and to avoid too complex a model that could result in false positive predictions. ANOVA table residuals were used to assess deviance of new models from the null model. 
+
+```{r include=FALSE}
+library(readr)
+library(magrittr)
+library(zipcode)
+library(tidyr)
+library(dplyr)
+library(emdbook)
+library(bbmle)
+library(lme4)
+library(nlme)
+library(scales)
+library(lattice)
+library(pscl)
+library(ROCR)
+library(lmtest)
+library(MKmisc)
+library(survey)
+library(caret)
+library(pROC)
+library(cvTools)
+library(rpart)
+library(boot)
+library(ggplot2)
+```
+
+```{r, include=FALSE}
+#Data
+setwd("~/Desktop/PhD/Big_Data_Analysis/RProjects_BigDataAnalysisClassWork/data/")
+ticksurvey <- read_csv("ticks_15_16.csv")
+```
+
+```{r, include=FALSE}
+#Inspecting and Cleaning Data
+head(ticksurvey)
+
+clean.zipcodes(ticksurvey$Zip_code) #Adding leading zeroes to zip codes
+
+#Renaming variables
+names(ticksurvey)[names(ticksurvey) == "Feeding-time_days"] <- "Feeding_time_days"
+names(ticksurvey)[names(ticksurvey) == "SpeciesID_Correct"] <- "Species_Correct"
+names(ticksurvey)[names(ticksurvey) == "StageID_Correct_Y_or_N"] <- "Stage_Correct"
+```
+
+```{r, include=FALSE}
+#Separating tick only dataset by season
+
+ticks_separatedates <- separate(allticks, Date_Found, c("Month", "Day", "Year") , sep = "/", remove = TRUE, convert = FALSE)
+
+winterticks <- subset(ticks_separatedates, Month == 2 | Month == 1 | Month == 12)
+springticks <- subset(ticks_separatedates, Month == 3 | Month == 4 | Month == 5)
+summerticks <- subset(ticks_separatedates, Month == 6 | Month == 7 | Month == 8)
+fallticks <- subset(ticks_separatedates, Month == 9 | Month == 10 | Month == 11)
+```
+
+```{r,include=FALSE}
+#Filtering the dataset for just tick submissions (i.e. removing the non-ticks)
+
+allticks <- filter(ticksurvey, Corrected_Species_ID == c("Blacklegged or Deer tick (Ixodes scapularis)", "Lone Star tick (Amblyomma americanum)", "American Dog tick (Dermacentor variabilis)", "Rocky Mountain Wood tick (Dermacentor andersoni)", "Gulf Coast Tick (Amblyomma maculatum)", "Unknown", "Brown Dog tick (Rhipicephalus sanguineus)", "Western-Blacklegged tick (Ixodes pacificus)", "Pacific Coast tick (Dermacentor occidentalis)", "Gulf Coast Tick (Amblyomma maculatum)"))
+```
+
+```{r, include=FALSE}
+#Cleaning and adding factors for tick submissions
+
+clean.zipcodes(allticks$Zip_code) #Adding leading zeroes to zip codes
+
+names(allticks)[names(allticks) == "Feeding-time_days"] <- "Feeding_time_days"
+names(allticks)[names(allticks) == "SpeciesID_Correct"] <- "Species_Correct"
+names(allticks)[names(allticks) == "StageID_Correct_Y_or_N"] <- "Stage_Correct"
+
+tick_species_correction = factor(allticks$Species_Correct)
+tick_stage_correction = factor(allticks$Stage_Correct)
+tick_species = factor(allticks$Corrected_Species_ID)
+tick_stage = factor(allticks$Corrected_Stage_ID)
+tick_sex = factor(allticks$Corrected_Sex)
+tick_engorgement = factor(allticks$Feeding_time_days)
+tick_response_species = factor(allticks$TickSpotter_Response_SpeciesID)
+tick_response_stage = factor(allticks$TickSpotter_Response_StageID)
+tick_location = factor(allticks$State_Country)
+tick_date = factor(allticks$Date_Found)
+tick_found = factor(allticks$Found_on)
+tick_month = factor(ticks_separatedates$Month)
+tick_winterseason = factor(winterticks$Month)
+tick_springseason = factor(springticks$Month)
+tick_summerseason = factor(summerticks$Month)
+tick_fallseason = factor(fallticks$Month)
+```
+
+```{r, include=FALSE}
+#Establish Regionality
+
+
+levels(tick_location) <- list(Northeast = c("Maine","New Hampshire","Vermont", "Massachusetts", "Rhode Island", "Connecticut", "New York", "Pennsylvania", "New Jersey"),  
+  Southeast = c("District of Columbia", "Delaware", "Maryland", "Virginia", "West Virginia","North Carolina", "South Carolina", "Georgia", "Florida", "Alabama", "Tennessee", "Kentucky", "Mississippi", "Louisiana", "Arkansas"),
+  Midwest = c("Missouri", "Ohio", "Indiana", "Michigan", "Illinois", "Wisconsin", "Minnesota", "Iowa", "Kansas", "Nebraska", "South Dakota", "North Dakota"),
+  Mountain = c("Montana", "Colorado", "Wyoming", "Utah", "Idaho", "Nevada"),
+  Southwest = c("Oklahoma", "Texas", "New Mexico", "Arizona"),
+  Pacific = c("Washington", "Oregon", "California"),
+  Noncontiguous = c("Hawaii", "Alaska"),
+  Canada = c("Canada"))
+
+tick_region <- tick_location
+summary(tick_region)
+```
+
+```{r, echo=FALSE}
+##Exploratory Analysis##
+
+#Submissions by Region
+summary(tick_region)
+plot(tick_location, main="TickSpotters Submissions by U.S. Region, 2015-2016", ylab="Number of Submissions", las=2)
+
+```
+
+```{r, echo=FALSE}
+#Respondent Identification ability with only tick species
+summary(tick_species_correction)
+plot(tick_species_correction, main="TickSpotters Tick Species Identified by Respondents, 2015-2016", xlab="Species Identification Status", ylab="Number of Submissions")
+```
+
+```{r, echo=FALSE}
+#Submissions by Tick Species
+summary(tick_species)
+plot(tick_species, main="Tick Species Reported to TickSpotters, 2015-2016", xlab="Tick Species", ylab="Number of Submissions", las=2)
+```
+
+```{r, echo=FALSE}
+#Submissions by Month
+summary(tick_month)
+plot(tick_month, main="TickSpotters Tick Submissions by Month, 2015-2016", ylab = "Number of Submissions", xlab = "Month", las=3)
+```
+
+```{r, include=FALSE}
+#Submissions by Season
+
+#Spring
+summary(springseason)
+plot(springseason, main="TickSpotters Submissions in Spring, 2015-2016", ylab = "Number of Submissions", xlab = "Month", las=3)
+
+#Summer
+summary(summerseason)
+plot(summerseason, main="TickSpotters Submissions in Summer, 2015-2016", ylab = "Number of Submissions", xlab = "Month", las=3)
+
+#Fall
+summary(fallseason)
+plot(fallseason, main="TickSpotters Submissions in Fall, 2015-2016", ylab = "Number of Submissions", xlab = "Month", las=3)
+
+#Winter
+summary(winterseason)
+plot(winterseason, main="TickSpotters Submissions in Winter, 2015-2016", ylab = "Number of Submissions", xlab = "Month", las=3)
+
+```
+
+```{r, echo=FALSE}
+#Tick Stage and Sex
+summary(tick_stage)
+plot(tick_stage, main="TickSpotters Submissions by Stage, 2015-2016", ylab = "Number of Submissions", xlab = "Tick Stages", las=2)
+
+summary(tick_sex)
+plot(tick_sex, main="TickSpotters Submissions by Stage, 2015-2016", ylab = "Number of Submissions", xlab = "Tick Sex", las=2)
+```
+
+```{r, echo=FALSE}
+#Tick Encounter 
+summary(tick_found)
+plot(tick_found, main="TickSpotters Submissions by Where Tick Was Found, 2015-2016", xlab = "Encounter Location", ylab = "Number of Ticks Submitted") 
+
+summary(tick_engorgement)
+plot(tick_engorgement, main="TickSpotters Submissions by Tick Feeding Time (days), 2015-2016", xlab = "Engorgement (# of days)", ylab = "Number of Ticks Submitted") 
+```
+
+RESULTS
+
+From January 1, 2015 to December 31, 2016, TickSpotters received 1045 tick photo submissions from every state in the U.S. Of these submissions, 67.5% of ticks were identified incorrectly. Roughly equal percentages (33.0%) of deer (Ixodes scapularis) and American dog (Dermacentor variabilis) ticks were submitted, followed by Lone Star ticks (Amblyomma americanum; 17.5%). The majority of ticks submitted were adult females (55.6%). Entries were sent mostly from the Northeastern region of the country (40.4%), with reports coming predominantely from New York, Pennsylvania, and Massachusetts. The majority of the submissions were sent in the spring and summer (April-July; 61.2%). Reports of ticks on humans were the most common (71.6%), and engorgement (feeding time) of ticks was generally a day or less (62.6%).  
+
+```{r, echo=FALSE}
+#Tick Literacy Analysis
+
+#Correction frequency across variables. N = incorrect identification, Y = correct identification.
+
+plot(tick_species_correction~tick_month, main="Corrected TickSpotters Submissions by Season, 2015-2016", xlab = "Month", ylab = "Correction Frequency")
+plot(tick_species_correction~tick_species, main="Corrected TickSpotters Submissions by Species, 2015-2016", xlab = "Species", ylab = "Correction Frequency", las=2)
+plot(tick_stage_correction~tick_stage, main="Corrected TickSpotters Submissions by Life Stage, 2015-2016", xlab = "Stage", ylab = "Correction Frequency")
+plot(tick_species_correction~tick_found, main="Corrected TickSpotters Submissions by Where Tick Was Found, 2015-2016", xlab = "Location Found", ylab = "Correction Frequency")
+plot(tick_species_correction~tick_region, main="Corrected TickSpotters Submissions by US Region, 2015-2016", xlab = "Region", ylab = "Correction Frequency", las=2)
+
+ggplot(allticks, aes(x=tick_month, fill=tick_species_correction)) + geom_bar() +
+    ggtitle("TickSpotters Corrections by Month, 2015-2016") +
+    labs(x="Month", y="Number of Submissions") 
+
+ggplot(allticks, aes(x=tick_month, fill=tick_species)) + geom_bar() +
+ggtitle("TickSpotters Monthly Submissions by Species, 2015-2016") +
+    labs(x="Month", y="Number of Submissions")
+  
+ggplot(allticks, aes(x=tick_month, fill=tick_region)) + geom_bar() +
+ggtitle("TickSpotters Monthly Submissions by Region, 2015-2016") +
+    labs(x="Month", y="Number of Submissions") 
+
+ggplot(allticks, aes(x=tick_species, fill=tick_species_correction)) + geom_bar() +
+ggtitle("TickSpotters Corrections by Species, 2015-2016") +
+    labs(x="Species", y="Number of Submissions")+
+  theme(axis.text.x = element_text(angle = 90, hjust = .5))
+
+ggplot(allticks, aes(x=tick_region, fill=tick_species)) + geom_bar() +
+ggtitle("TickSpotters Species by Region, 2015-2016") +
+    labs(x="Region", y="Number of Submissions")+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+Based on the exploratory analysis, ticks were generally misidentified equally across months, but Lone star ticks were the most misidentified tick. Nymphs were the most incorrectly identified stage, and reports from the Pacific region had the largest proportion of misidentified ticks of any region. May was the month during which most reports were made, and the greatest number of misidentified ticks were submitted. Binomial GLM models were built to test the significance of these parameters on the effect of correct tick identification (i.e. "tick literacy").
+
+```{r,include=FALSE }
+##Logistic Regression Models to Understand How Different Variables are Correlated 
+#with the Ability to Identify a Tick Correctly
+
+##Set up training and test datasets to build and then test model accuracy
+train <- (allticks[1:500,])
+test <- (allticks[501:545,])
+
+#Establish the most significant solitary predictors## 
+
+mod0a<-glm(tick_species_correction ~ tick_month,family=binomial(link='logit'),data=train) #No statistically significant month for inability to identify tick correctly
+
+mod0b<-glm(tick_species_correction ~ tick_engorgement,family=binomial(link='logit'),data=train) #Significant inability to ID tick at 4 days fed (p=0.01)
+
+mod0c<-glm(tick_species_correction ~ tick_species,family=binomial(link='logit'),data=train)#Significant ability to ID blacklegged ticks correctly (p=0.05) and brown dog ticks incorrectly (p=0.05)
+
+mod0d<-glm(tick_species_correction ~ tick_stage,family=binomial(link='logit'),data=train)#Significant inability to ID nymphs (p=0.05)
+
+mod0e<-glm(tick_species_correction ~ tick_found,family=binomial(link='logit'),data=train)#No significant difference
+
+mod0f<-glm(tick_species_correction ~ tick_region,family=binomial(link='logit'),data=train)#Significant inability to ID ticks correctly in Southeast (p=0.05), and Pacific regions (p=0.001)
+
+mod0g<-glm(tick_species_correction ~ tick_region+tick_month+tick_species+tick_stage+tick_found,family=binomial(link='logit'),data=train)#Significant ability to ID blacklegged ticks correctly (0.001) and ID nymphs incorrectly (p=0.001) when interacting with month, stage, and tick "victim" 
+```
+
+```{r,include=FALSE}
+#Examining additional parameter permutations
+
+mod0h<-glm(tick_species_correction ~ tick_region+tick_month+tick_species+tick_stage,family=binomial(link='logit'),data=train)
+
+mod0i<-glm(tick_species_correction ~ tick_region+tick_month+tick_species,family=binomial(link='logit'),data=train)
+
+mod0j<-glm(tick_species_correction ~ tick_region+tick_month,family=binomial(link='logit'),data=train)
+
+mod0k<-glm(tick_species_correction ~ tick_month+tick_species+tick_stage,family=binomial(link='logit'),data=train)
+
+mod0l<-glm(tick_species_correction ~ tick_month+tick_species,family=binomial(link='logit'),data=train)
+```
+
+```{r, include=FALSE} 
+AICtab(mod0a, mod0b, mod0c, mod0d, mod0e, mod0f, mod0g, mod0h, mod0i, mod0j, mod0k, mod0l)# Revealed species (mod0c) followed by season (mod0a)
+BICtab(mod0a,mod0c, mod0d, mod0e, mod0f, mod0g, mod0h, mod0i, mod0j, mod0k, mod0l)
+
+summary(mod0k) #Interactions among season, species, stage that are most signficantly predictive of correction
+summary(mod0h) #Interactions among region, season, species, stage that are most signficantly predictive of correction
+
+anova(mod0k, mod0h, test ="Chisq")
+```
+
+```{r, echo=FALSE}
+summary(mod0h) ##Interactions among region, season, species, stage that are most signficantly predictive of correction
+```
+**DISCUSSION**
+
+TickSpotter participant ability to correctly identify deer ticks (*Ixodes scapularis*) was statistically significant (p=0.001) when incorporated into a logistic regression model. Nymphs were the life stage most likely to be identified incorrectly. Interactions among month of report, region of report, tick species, and tick stage are most signficantly predictive of tick identification ability.
+
+Additional analysis is required to assess whether additional predictors and/or interactions among predictors will create a more robust model. Once the best model for the data has been established by AIC/BIC, cross-validation and to estimate how well the models fit the test set of the data. Finally, a receiver operator characteristic (ROC) curve should be performed to assess the model's sensitivity and accuracy on the test dataset.
+
+This information presents a unique ability to adjust the focus of education efforts to better address knowledge gaps while empowering tick-borne disease prevention behaviors. Because this model predicts that people are less likely to properly identify nymphal stage ticks, bolstering education of this dangerous vector is critical. Across the United States and in Canada, nymphal ticks emerge during the spring and often go undetected due to their small size. Poppyseed-sized nymphal blacklegged ticks (*Ixodes scapularis*) are the main transmitters of Lyme disease to humans, which corresponds to an increase in Lyme disease cases in the summer months after the up to 1 month incubation period (CDC 2015). This stage can also transmit numerous other human pathogens including babesia, anaplasma, miyamotoi relapsing fever, and Powassan/deer tick encephalitic viruses (CDC 2018). Pre-emptive efforts are needed to educate the public regarding the risk of encountering nymphal ticks in the spring and summer months.
+
+**REFERENCES**
+
+Adrion ER, Aucott J, Lemke KW, and Weiner JP. 2015. Health Care Costs, Utilization and Patterns of Care following Lyme Disease. PLoS One. 10(2): e0116767.
+
+Beard CB and Strickman D. 2014. Federal Initiative: Tick-Borne Disease Integrated Pest Management White Paper. Accessed November 2016: https://www.epa.gov/pesp/federal-initiative-tick-borne-disease-integrated-pest-management-white-paper
+
+CDC. 2018. Data and statistics. Atlanta, GA: US Department of Health and Human Services, CDC. Available at http://www.cdc.gov/lyme/stats/index.html.
+
+Eisen RJ, Eisen L, Beard CB. 2016. County-Scale Distribution of Ixodes scapularis and Ixodes pacificus (Acari: Ixodidae) in the Continental United States. Journal of Medical Entomology. 0:1-38.
+
+Koffi JK, Savage K, Thivierge K, Lindsay RL, Bouchard C, Pelcat Y, and Ogden NH. 2017. Evaluating the submission of digital images as a method of surveillance for Ixodes scapularis ticks. Parasitology. 144: 877-883.
+
+Lobo L, Cursino-Santos JR, Alhassan A, and Rodrigues M. 2013. Babesia: An Emerging Infectious Threat in Transfusion Medicine. PLoS Pathogens. 9(7): e1003387. 
+
+Rand PW, Lacombe EH, Dearborn R, Cahill R, Elias S, Lubeczyk CB, Beckett GA, Smith RP. 2007. Journal of Medical Entomology. 44(6): 1118-1129.
+
+Springer YP, Eisen L, Beat L, James AM, and Eisen R. 2014. Spatial Distribution of Counties in the Continental United States with Records of Occurrence of Amblyomma americanum (Ixodida: Ixodidae). Journal of Medical Entomology. 51(2): 342-351.
+
+Xu G, Mather TN, Hollingsworth CS, Rich SM. 2016. Passive Surveillance of Ixodes scapularis (Say), Their Biting Activity, and Associated Pathogens in Massachusetts. Vector-borne and Zoonotic Diseases. 16(8): 520-527.
+
